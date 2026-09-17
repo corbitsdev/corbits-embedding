@@ -125,6 +125,19 @@ describe("embedTexts", () => {
     expect(vectors.map((v) => v[0])).toEqual([0, 1, 0]);
   });
 
+  it("rejects a batchSize below 1 instead of looping forever", async () => {
+    // `batches` advances by `i += size`, so a size of 0 never advances and
+    // grows the batch list until OOM. The schema declares `number > 0`; the
+    // entry boundary enforces it before any request issues.
+    for (const batchSize of [0, -1]) {
+      const { deps: d, calls } = deps([embedding(3)]);
+      await expect(
+        embedTexts(["a"], { ...CONFIG, batchSize }, { deps: d }),
+      ).rejects.toBeInstanceOf(RangeError);
+      expect(calls).toHaveLength(0);
+    }
+  });
+
   it("rejects a malformed response rather than returning junk vectors", async () => {
     const { deps: d } = deps([
       Response.json({ data: [{ index: 0, embedding: true }] }),

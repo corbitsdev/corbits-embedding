@@ -165,8 +165,15 @@ export async function embedTexts(
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
 
+  const batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+  if (!(batchSize >= 1)) {
+    throw new RangeError(
+      `batchSize must be a number >= 1, got ${batchSize}: a batch size below 1 would never advance through the input`,
+    );
+  }
+
   const vectors: number[][] = [];
-  for (const batch of batches(texts, config.batchSize ?? DEFAULT_BATCH_SIZE)) {
+  for (const batch of batches(texts, batchSize)) {
     const request = buildRequest(config, batch);
     const body = await runJSONRequest(request, {
       deps: options.deps,
