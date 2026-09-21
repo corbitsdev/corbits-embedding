@@ -24,11 +24,15 @@ bad key.
 
 ## Installation
 
+Not published to npm yet. Until a registry publish, `npm install @corbits/embedding`
+404s. Git is the install path.
+
 ```bash
-npm install @corbits/embedding
+bun add github:corbitsdev/corbits-embedding
 ```
 
-Requires Node >= 20 or Bun >= 1.2.
+Requires Node >= 20 or Bun >= 1.2. The default export is built `dist/`; native Node
+does not load this package's extensionless TypeScript source.
 
 ```ts
 import { createDefaultScheduler } from "@intx/inference";
