@@ -1,7 +1,13 @@
+import { type } from "arktype";
 import { describe, expect, it } from "bun:test";
 import type { Dependencies } from "@intx/inference";
 
-import { embedTexts, probeEmbedDims, type EmbedConfig } from "./embed";
+import {
+  embedTexts,
+  probeEmbedDims,
+  EmbedConfigSchema,
+  type EmbedConfig,
+} from "./embed";
 import { extractRetryAfterMs, ModelRequestError } from "./request";
 
 const CONFIG: EmbedConfig = {
@@ -125,6 +131,19 @@ describe("embedTexts", () => {
     expect(vectors.map((v) => v[0])).toEqual([0, 1, 0]);
   });
 
+  it("rejects a batchSize that is not an integer >= 1 instead of looping forever", async () => {
+    // `batches` advances by `i += size`, so a size of 0 never advances and
+    // grows the batch list until OOM. Fractional sizes would also stall or
+    // slice wrongly. Schema and runtime both require integer >= 1.
+    for (const batchSize of [0, -1, 0.5, Number.NaN, 1.5]) {
+      const { deps: d, calls } = deps([embedding(3)]);
+      await expect(
+        embedTexts(["a"], { ...CONFIG, batchSize }, { deps: d }),
+      ).rejects.toBeInstanceOf(RangeError);
+      expect(calls).toHaveLength(0);
+    }
+  });
+
   it("rejects a malformed response rather than returning junk vectors", async () => {
     const { deps: d } = deps([
       Response.json({ data: [{ index: 0, embedding: true }] }),
@@ -132,6 +151,26 @@ describe("embedTexts", () => {
     await expect(embedTexts(["a"], CONFIG, { deps: d })).rejects.toThrow(
       /malformed embeddings response/,
     );
+  });
+});
+
+describe("EmbedConfigSchema", () => {
+  const base = { baseURL: "https://embed.example/v1", model: "m" };
+
+  it("accepts an integer batchSize >= 1 and an omitted batchSize", () => {
+    expect(EmbedConfigSchema({ ...base, batchSize: 1 })).toEqual({
+      ...base,
+      batchSize: 1,
+    });
+    expect(EmbedConfigSchema(base)).toEqual(base);
+  });
+
+  it("rejects a fractional, non-integer, or sub-1 batchSize", () => {
+    for (const batchSize of [0, -1, 0.5, Number.NaN, 1.5]) {
+      expect(EmbedConfigSchema({ ...base, batchSize })).toBeInstanceOf(
+        type.errors,
+      );
+    }
   });
 });
 

@@ -4,11 +4,11 @@ export {
   EmbedConfigSchema,
   type EmbedConfig,
   type EmbedOptions,
-} from "./embed";
+} from "./embed.js";
 export {
   runJSONRequest,
   extractRetryAfterMs,
   ModelRequestError,
   type RetryAfterExtractor,
   type RunRequestOptions,
-} from "./request";
+} from "./request.js";

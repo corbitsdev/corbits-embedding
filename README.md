@@ -22,6 +22,18 @@ from an embedding endpoint therefore behaves exactly as one from a chat
 endpoint, and a `credential_failure` aborts immediately rather than retrying a
 bad key.
 
+## Installation
+
+Not published to npm yet. Until a registry publish, `npm install @corbits/embedding`
+404s. Git is the install path.
+
+```bash
+bun add github:corbitsdev/corbits-embedding
+```
+
+Requires Node >= 20 or Bun >= 1.2. The default export is built `dist/`; native Node
+does not load this package's extensionless TypeScript source.
+
 ```ts
 import { createDefaultScheduler } from "@intx/inference";
 import { embedTexts, probeEmbedDims } from "@corbits/embedding";
@@ -58,6 +70,19 @@ Note that `@corbits/embedding` and `@corbits/reranking` each carry their own
 copy of this class until the shared transport is upstreamed, so `instanceof`
 does not hold across the two. Catching both? Discriminate on
 `error.name === "ModelRequestError"`.
+
+## Transport exports
+
+The barrel re-exports the transport `embedTexts` is built on, for sibling
+one-shot JSON clients that want the same classified, retried request path
+without touching `@intx/inference` internals:
+
+- `runJSONRequest` — one JSON POST with error classification and retry.
+- `extractRetryAfterMs` — the default `Retry-After` reader, overridable per
+  call via `extractRetryAfterMs`.
+- `ModelRequestError` — the error every failure mode raises, carrying the
+  classified `InferenceError` as `reason` and the URL.
+- Types `RunRequestOptions` and `RetryAfterExtractor`.
 
 ## Versioning
 

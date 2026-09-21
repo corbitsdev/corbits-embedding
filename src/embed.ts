@@ -6,7 +6,7 @@ import {
   runJSONRequest,
   type RequestDependencies,
   type RetryAfterExtractor,
-} from "./request";
+} from "./request.js";
 
 /**
  * `/v1/embeddings` is the one wire format worth supporting — OpenAI, Ollama,
@@ -30,7 +30,7 @@ export const EmbedConfigSchema = type({
    * Inputs per request. Providers cap this — OpenAI rejects arrays over 2048 —
    * and a smaller batch is also how you stay under a per-request token ceiling.
    */
-  "batchSize?": "number > 0",
+  "batchSize?": "number.integer >= 1",
   "timeoutMs?": "number > 0",
 });
 export type EmbedConfig = typeof EmbedConfigSchema.infer;
@@ -165,8 +165,15 @@ export async function embedTexts(
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
 
+  const batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+  if (!Number.isInteger(batchSize) || batchSize < 1) {
+    throw new RangeError(
+      `batchSize must be an integer >= 1, got ${batchSize}: a batch size below 1 would never advance through the input`,
+    );
+  }
+
   const vectors: number[][] = [];
-  for (const batch of batches(texts, config.batchSize ?? DEFAULT_BATCH_SIZE)) {
+  for (const batch of batches(texts, batchSize)) {
     const request = buildRequest(config, batch);
     const body = await runJSONRequest(request, {
       deps: options.deps,
