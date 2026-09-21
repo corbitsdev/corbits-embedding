@@ -7,19 +7,19 @@ batch, validates the reply, and returns vectors in input order.
 One wire format, not a provider switch — OpenAI, Ollama, TEI, vLLM, and Jina
 all serve `/v1/embeddings`.
 
-## Install
+## Runtime support
+
+Bun >= 1.2 is the development runtime. Node >= 24 consumes built `dist/`;
+native Node does not load this package's TypeScript source.
+
+## Quickstart
 
 ```bash
-npm install @corbits/embedding
+npm add @corbits/embedding
 pnpm add @corbits/embedding
 yarn add @corbits/embedding
 bun add @corbits/embedding
 ```
-
-Requires Node >= 24 or Bun >= 1.2. The published export is built `dist/`;
-native Node does not load this package's TypeScript source.
-
-## Use
 
 ```ts
 import { createDefaultScheduler } from "@intx/inference";
@@ -35,8 +35,6 @@ const [vector] = await embedTexts(
 
 Only `fetch` and `scheduler` are required — a full harness `Dependencies`
 satisfies this if you already have one.
-
-## Full example
 
 ```ts
 import { createDefaultScheduler } from "@intx/inference";
@@ -91,15 +89,17 @@ The barrel also re-exports the one-shot JSON transport (`runJSONRequest`,
 `extractRetryAfterMs`, `ModelRequestError`) for sibling clients that want
 the same classified, retried request path.
 
-## Contributing
+## Development
 
 ```bash
+git clone https://github.com/corbitsdev/corbits-embedding.git
+cd corbits-embedding
 bun install
 bun run build      # tsc -p tsconfig.build.json
 bun run test       # bun test ./src
 bun run typecheck  # tsc --noEmit
 ```
 
-Node >= 24, Bun >= 1.2.0.
+## License
 
 LGPL-2.1-only — see [`LICENSE`](LICENSE).
