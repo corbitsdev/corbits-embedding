@@ -31,7 +31,7 @@ Not published to npm yet. Until a registry publish, `npm install @corbits/embedd
 bun add github:corbitsdev/corbits-embedding
 ```
 
-Requires Node >= 20 or Bun >= 1.2. The default export is built `dist/`; native Node
+Requires Node >= 24 or Bun >= 1.2. The default export is built `dist/`; native Node
 does not load this package's extensionless TypeScript source.
 
 ```ts
