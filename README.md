@@ -20,63 +20,45 @@ Runs on Bun >= 1.2 or Node >= 24. The built `dist/` entry is the default import.
 
 ## Quickstart
 
-This package never touches credential storage — it takes an already-resolved
-`apiKey`. A host wraps `embedTexts` in a function of its own that resolves the
-key first: an operator-set env var if present, otherwise the tenant's own
-stored credential, decrypted through the host's `CredentialCipher`. That
-function, not `embedTexts` directly, is what a hub route or ingestion worker
-calls.
+This package never touches credential storage or config sources — it takes an
+already-built `EmbedConfig`. Where that config comes from is the host's
+choice; `@corbits/memory`, for example, reads it straight from
+`EMBED_BASE_URL`/`EMBED_MODEL`/`EMBED_API_KEY` env vars, all-or-nothing on the
+first two. A host wraps `embedTexts` in a function of its own that builds the
+config once (at startup, or per call) and probes dimensionality up front so a
+later model swap is caught as a migration, not a silent width mismatch.
 
 ```ts
-import type { DB } from "@intx/db";
-import { resolveCredentialByName } from "@intx/db";
 import { createDefaultScheduler } from "@intx/inference";
-import type { CredentialCipher } from "@intx/types";
-import { credentialAad } from "@intx/types";
-import { embedTexts, type EmbedConfig } from "@corbits/embedding";
+import {
+  embedTexts,
+  probeEmbedDims,
+  type EmbedConfig,
+} from "@corbits/embedding";
 
-export type TenantEmbedHost = {
-  db: DB["db"];
-  credentialCipher: CredentialCipher;
-  tenantId: string;
-  baseURL: string;
-  model: string;
-};
+export function loadEmbedConfig(): EmbedConfig | undefined {
+  const baseURL = process.env["EMBED_BASE_URL"];
+  const model = process.env["EMBED_MODEL"];
+  if (baseURL === undefined || model === undefined) return undefined;
 
-// An operator-set EMBED_API_KEY wins outright -- e.g. a shared local
-// endpoint with no per-tenant credential at all. Otherwise fall back to the
-// tenant's own stored credential, named "embedding".
-async function resolveEmbedApiKey(
-  host: TenantEmbedHost,
-): Promise<string | undefined> {
-  const envKey = process.env["EMBED_API_KEY"];
-  if (envKey !== undefined) return envKey;
-
-  const credential = await resolveCredentialByName(
-    host.db,
-    host.tenantId,
-    "embedding",
-  );
-  if (credential === null) return undefined;
-
-  return host.credentialCipher.decrypt(
-    credential.secret,
-    credentialAad(credential.id, "secret"),
-  );
+  const apiKey = process.env["EMBED_API_KEY"];
+  return { baseURL, model, ...(apiKey !== undefined ? { apiKey } : {}) };
 }
 
-export async function embedForTenant(
+export async function embed(
   texts: readonly string[],
-  host: TenantEmbedHost,
+  config: EmbedConfig,
 ): Promise<number[][]> {
-  const apiKey = await resolveEmbedApiKey(host);
-  const config: EmbedConfig = {
-    baseURL: host.baseURL,
-    model: host.model,
-    ...(apiKey !== undefined ? { apiKey } : {}),
-  };
   const deps = { fetch, scheduler: createDefaultScheduler() };
   return embedTexts(texts, config, { deps });
+}
+
+// At startup: fail fast if the configured model's width doesn't match
+// what's already stored.
+const config = loadEmbedConfig();
+if (config !== undefined) {
+  const deps = { fetch, scheduler: createDefaultScheduler() };
+  const dims = await probeEmbedDims(config, { deps });
 }
 ```
 
@@ -104,7 +86,7 @@ The barrel also re-exports the one-shot JSON transport `embedTexts` is built on,
 
 ## Interchange
 
-Interchange hubs and ingestion workers use this package for embeddings behind the shared `@intx/inference` transport: same fetch path, same error taxonomy, and same retry behavior as chat. Memory and retrieval pipelines pair `probeEmbedDims` at startup with `embedTexts` batches at ingest and query time.
+Built on the shared `@intx/inference` transport, so an embeddings call fails and retries the same way a chat call does: same `deps.fetch` path, same `InferenceError` classification, same `createDefaultRetryPolicy` backoff. A retrieval pipeline typically pairs `probeEmbedDims` at startup with `embedTexts` batches at ingest and query time, as described above.
 
 ## Versioning
 
