@@ -1,103 +1,73 @@
 # @corbits/embedding
 
-Embedding client for OpenAI-compatible `/v1/embeddings` endpoints. Given a
-`baseURL`, a model, and some texts, `embedTexts` batches them, posts each
-batch, validates the reply, and returns vectors in input order.
+One API for every embedding provider. Point at any OpenAI-compatible `/v1/embeddings` endpoint, swap models with a config change, and get ordered vectors back.
 
-One wire format, not a provider switch — OpenAI, Ollama, TEI, vLLM, and Jina
-all serve `/v1/embeddings`.
+OpenAI, Ollama, TEI, vLLM, and Jina all serve the same wire shape. This package is one code path over that shape, with parameters for what varies between providers:
 
-## Runtime support
+- `dimensions` — Matryoshka truncation for models that support it, including OpenAI `text-embedding-3` (down to 256), Jina v3 (32), and Jina v4 (128). Sent only when set, so models without MRL stay happy.
+- `encodingFormat` — `float` (default) or compact `base64`.
+- `batchSize` — inputs per request (default 32). Tune it to provider caps and per-request token ceilings.
 
-Bun >= 1.2 is the development runtime. Node >= 24 consumes built `dist/`;
-native Node does not load this package's TypeScript source.
+Transport, error classification, and retry build on `@intx/inference`: requests go through the shared `deps.fetch` path, failures classify into `InferenceError` just like chat calls, and `createDefaultRetryPolicy` guides backoff. A 429 from an embeddings endpoint behaves like one from a chat endpoint, and credential failures short-circuit.
 
-## Quickstart
+## Install
 
 ```bash
-npm add @corbits/embedding
-pnpm add @corbits/embedding
-yarn add @corbits/embedding
 bun add @corbits/embedding
 ```
 
-```ts
-import { createDefaultScheduler } from "@intx/inference";
-import { embedTexts } from "@corbits/embedding";
+Runs on Bun >= 1.2 or Node >= 24. The built `dist/` entry is the default import.
 
-const deps = { fetch, scheduler: createDefaultScheduler() };
-const [vector] = await embedTexts(
-  ["hello world"],
-  { baseURL: "http://localhost:11434/v1", model: "nomic-embed-text" },
-  { deps },
-);
-```
-
-Only `fetch` and `scheduler` are required — a full harness `Dependencies`
-satisfies this if you already have one.
+## Quickstart
 
 ```ts
 import { createDefaultScheduler } from "@intx/inference";
 import { embedTexts, probeEmbedDims } from "@corbits/embedding";
 
 const deps = { fetch, scheduler: createDefaultScheduler() };
+
 const config = {
-  baseURL: "https://api.openai.com/v1",
-  model: "text-embedding-3-small",
-  apiKey: process.env.OPENAI_API_KEY,
-  // dimensions: 256,          // Matryoshka truncation; sent only when set
-  // encodingFormat: "float",  // or "base64"
-  // batchSize: 32,            // OpenAI rejects arrays over 2048
+  baseURL: "http://localhost:11434/v1", // provider root, version prefix included
+  model: "nomic-embed-text",
 };
 
 const dims = await probeEmbedDims(config, { deps });
-const vectors = await embedTexts(
-  ["staging deploys run from main", "on-call rotation is weekly"],
-  config,
-  { deps },
-);
-
-console.log(dims, vectors[0]?.length);
+const [vector] = await embedTexts(["hello world"], config, { deps });
 ```
 
-`probeEmbedDims` embeds one probe string and reports the length it got back.
-Dimensionality is not knowable from a model name — it varies by provider and
-is changed by `dimensions` — so a caller that persists vectors must discover
-it. Swapping models is a migration, not a config change.
+`embedTexts(texts, config, options)` batches sequentially, posts each batch to `{baseURL}/embeddings`, and returns vectors in input order. Options carry `deps`, with optional `retryPolicy`, `extractRetryAfterMs`, and `signal`.
 
-Failures raise `ModelRequestError` (transport, HTTP status, or a 200 whose
-body is not JSON), carrying the classified `InferenceError` as `reason` and
-the URL. `@corbits/embedding` and `@corbits/reranking` each carry their own
-copy of this class, so `instanceof` does not hold across the two — catch on
-`error.name === "ModelRequestError"`.
+## Dimensionality
 
-## How it works
+`probeEmbedDims(config, { deps })` embeds one probe string and reports the length received. Dimensionality follows the provider and the `dimensions` setting, so callers that persist vectors discover it at startup and treat a model swap as a migration. Representative widths: 1536 for OpenAI `text-embedding-3-small`, 768 for `nomic-embed-text`, 384 for `bge-small-en-v1.5`.
 
-`embedTexts` splits the input on `batchSize` (default 32) and posts each
-batch sequentially to `{baseURL}/embeddings`. Placement is by the echoed
-`index`, never by reply position; a reordered or short reply is rejected
-rather than silently pairing the wrong vector with a text.
+## Errors
 
-Transport, error classification, and retry come from `@intx/inference`:
-`deps.fetch` is the single request path, failures become an `InferenceError`
-through the same classifiers a chat call uses, and `createDefaultRetryPolicy`
-decides whether to back off or abort. A 429 from an embedding endpoint
-therefore behaves as one from a chat endpoint; a `credential_failure` aborts
-immediately.
+Every failure mode — transport, HTTP status, or a 200 with an unexpected body — raises `ModelRequestError`, carrying the classified `InferenceError` as `reason` plus the request URL. The embedding and reranking packages each carry their own copy of this class while the shared transport is upstreamed, so code catching both discriminates on `error.name === "ModelRequestError"`.
 
-The barrel also re-exports the one-shot JSON transport (`runJSONRequest`,
-`extractRetryAfterMs`, `ModelRequestError`) for sibling clients that want
-the same classified, retried request path.
+## Transport exports
+
+The barrel also re-exports the one-shot JSON transport `embedTexts` is built on, for sibling clients that want the same classified, retried request path:
+
+- `runJSONRequest` — one JSON POST with error classification and retry.
+- `extractRetryAfterMs` — default `Retry-After` reader, overridable per call.
+- `ModelRequestError` — error for every failure mode, with `reason` and URL.
+- Types `RunRequestOptions` and `RetryAfterExtractor`.
+
+## Interchange
+
+Interchange hubs and ingestion workers use this package for embeddings behind the shared `@intx/inference` transport: same fetch path, same error taxonomy, and same retry behavior as chat. Memory and retrieval pipelines pair `probeEmbedDims` at startup with `embedTexts` batches at ingest and query time.
+
+## Versioning
+
+Semver. Releases run `bun run build && npm publish` with green CI.
 
 ## Development
 
 ```bash
-git clone https://github.com/corbitsdev/corbits-embedding.git
-cd corbits-embedding
 bun install
-bun run build      # tsc -p tsconfig.build.json
-bun run test       # bun test ./src
-bun run typecheck  # tsc --noEmit
+bun test ./src
+bunx tsc --noEmit
 ```
 
 ## License
