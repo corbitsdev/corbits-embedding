@@ -20,22 +20,52 @@ Runs on Bun >= 1.2 or Node >= 24. The built `dist/` entry is the default import.
 
 ## Quickstart
 
+This package never touches credential storage or config sources — it takes an
+already-built `EmbedConfig`. Where that config comes from is the host's
+choice; `@corbits/memory`, for example, reads it straight from
+`EMBED_BASE_URL`/`EMBED_MODEL`/`EMBED_API_KEY` env vars, all-or-nothing on the
+first two. A host wraps `embedTexts` in a function of its own that builds the
+config once (at startup, or per call) and probes dimensionality up front so a
+later model swap is caught as a migration, not a silent width mismatch.
+
 ```ts
 import { createDefaultScheduler } from "@intx/inference";
-import { embedTexts, probeEmbedDims } from "@corbits/embedding";
+import {
+  embedTexts,
+  probeEmbedDims,
+  type EmbedConfig,
+} from "@corbits/embedding";
 
-const deps = { fetch, scheduler: createDefaultScheduler() };
+export function loadEmbedConfig(): EmbedConfig | undefined {
+  const baseURL = process.env["EMBED_BASE_URL"];
+  const model = process.env["EMBED_MODEL"];
+  if (baseURL === undefined || model === undefined) return undefined;
 
-const config = {
-  baseURL: "http://localhost:11434/v1", // provider root, version prefix included
-  model: "nomic-embed-text",
-};
+  const apiKey = process.env["EMBED_API_KEY"];
+  return { baseURL, model, ...(apiKey !== undefined ? { apiKey } : {}) };
+}
 
-const dims = await probeEmbedDims(config, { deps });
-const [vector] = await embedTexts(["hello world"], config, { deps });
+export async function embed(
+  texts: readonly string[],
+  config: EmbedConfig,
+): Promise<number[][]> {
+  const deps = { fetch, scheduler: createDefaultScheduler() };
+  return embedTexts(texts, config, { deps });
+}
+
+// At startup: fail fast if the configured model's width doesn't match
+// what's already stored.
+const config = loadEmbedConfig();
+if (config !== undefined) {
+  const deps = { fetch, scheduler: createDefaultScheduler() };
+  const dims = await probeEmbedDims(config, { deps });
+}
 ```
 
-`embedTexts(texts, config, options)` batches sequentially, posts each batch to `{baseURL}/embeddings`, and returns vectors in input order. Options carry `deps`, with optional `retryPolicy`, `extractRetryAfterMs`, and `signal`.
+`embedTexts(texts, config, options)` batches sequentially, posts each batch to
+`{baseURL}/embeddings`, and returns vectors in input order. `options` carries
+`deps` (a host's real `fetch` plus `createDefaultScheduler()`, the production
+scheduler), with optional `retryPolicy`, `extractRetryAfterMs`, and `signal`.
 
 ## Dimensionality
 
@@ -45,7 +75,7 @@ const [vector] = await embedTexts(["hello world"], config, { deps });
 
 Every failure mode — transport, HTTP status, or a 200 with an unexpected body — raises `ModelRequestError`, carrying the classified `InferenceError` as `reason` plus the request URL. The embedding and reranking packages each carry their own copy of this class while the shared transport is upstreamed, so code catching both discriminates on `error.name === "ModelRequestError"`.
 
-## Transport exports
+## Lower-level: transport
 
 The barrel also re-exports the one-shot JSON transport `embedTexts` is built on, for sibling clients that want the same classified, retried request path:
 
@@ -56,7 +86,7 @@ The barrel also re-exports the one-shot JSON transport `embedTexts` is built on,
 
 ## Interchange
 
-Interchange hubs and ingestion workers use this package for embeddings behind the shared `@intx/inference` transport: same fetch path, same error taxonomy, and same retry behavior as chat. Memory and retrieval pipelines pair `probeEmbedDims` at startup with `embedTexts` batches at ingest and query time.
+Built on the shared `@intx/inference` transport, so an embeddings call fails and retries the same way a chat call does: same `deps.fetch` path, same `InferenceError` classification, same `createDefaultRetryPolicy` backoff. A retrieval pipeline typically pairs `probeEmbedDims` at startup with `embedTexts` batches at ingest and query time, as described above.
 
 ## Versioning
 
