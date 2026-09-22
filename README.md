@@ -20,22 +20,70 @@ Runs on Bun >= 1.2 or Node >= 24. The built `dist/` entry is the default import.
 
 ## Quickstart
 
+This package never touches credential storage — it takes an already-resolved
+`apiKey`. A host wraps `embedTexts` in a function of its own that resolves the
+key first: an operator-set env var if present, otherwise the tenant's own
+stored credential, decrypted through the host's `CredentialCipher`. That
+function, not `embedTexts` directly, is what a hub route or ingestion worker
+calls.
+
 ```ts
+import type { DB } from "@intx/db";
+import { resolveCredentialByName } from "@intx/db";
 import { createDefaultScheduler } from "@intx/inference";
-import { embedTexts, probeEmbedDims } from "@corbits/embedding";
+import type { CredentialCipher } from "@intx/types";
+import { credentialAad } from "@intx/types";
+import { embedTexts, type EmbedConfig } from "@corbits/embedding";
 
-const deps = { fetch, scheduler: createDefaultScheduler() };
-
-const config = {
-  baseURL: "http://localhost:11434/v1", // provider root, version prefix included
-  model: "nomic-embed-text",
+export type TenantEmbedHost = {
+  db: DB["db"];
+  credentialCipher: CredentialCipher;
+  tenantId: string;
+  baseURL: string;
+  model: string;
 };
 
-const dims = await probeEmbedDims(config, { deps });
-const [vector] = await embedTexts(["hello world"], config, { deps });
+// An operator-set EMBED_API_KEY wins outright -- e.g. a shared local
+// endpoint with no per-tenant credential at all. Otherwise fall back to the
+// tenant's own stored credential, named "embedding".
+async function resolveEmbedApiKey(
+  host: TenantEmbedHost,
+): Promise<string | undefined> {
+  const envKey = process.env["EMBED_API_KEY"];
+  if (envKey !== undefined) return envKey;
+
+  const credential = await resolveCredentialByName(
+    host.db,
+    host.tenantId,
+    "embedding",
+  );
+  if (credential === null) return undefined;
+
+  return host.credentialCipher.decrypt(
+    credential.secret,
+    credentialAad(credential.id, "secret"),
+  );
+}
+
+export async function embedForTenant(
+  texts: readonly string[],
+  host: TenantEmbedHost,
+): Promise<number[][]> {
+  const apiKey = await resolveEmbedApiKey(host);
+  const config: EmbedConfig = {
+    baseURL: host.baseURL,
+    model: host.model,
+    ...(apiKey !== undefined ? { apiKey } : {}),
+  };
+  const deps = { fetch, scheduler: createDefaultScheduler() };
+  return embedTexts(texts, config, { deps });
+}
 ```
 
-`embedTexts(texts, config, options)` batches sequentially, posts each batch to `{baseURL}/embeddings`, and returns vectors in input order. Options carry `deps`, with optional `retryPolicy`, `extractRetryAfterMs`, and `signal`.
+`embedTexts(texts, config, options)` batches sequentially, posts each batch to
+`{baseURL}/embeddings`, and returns vectors in input order. `options` carries
+`deps` (a host's real `fetch` plus `createDefaultScheduler()`, the production
+scheduler), with optional `retryPolicy`, `extractRetryAfterMs`, and `signal`.
 
 ## Dimensionality
 
@@ -45,7 +93,7 @@ const [vector] = await embedTexts(["hello world"], config, { deps });
 
 Every failure mode — transport, HTTP status, or a 200 with an unexpected body — raises `ModelRequestError`, carrying the classified `InferenceError` as `reason` plus the request URL. The embedding and reranking packages each carry their own copy of this class while the shared transport is upstreamed, so code catching both discriminates on `error.name === "ModelRequestError"`.
 
-## Transport exports
+## Lower-level: transport
 
 The barrel also re-exports the one-shot JSON transport `embedTexts` is built on, for sibling clients that want the same classified, retried request path:
 
