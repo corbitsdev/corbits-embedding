@@ -9,7 +9,6 @@ load this package's TypeScript source.
 ```json
 "exports": {
   ".": {
-    "intx-src": "./src/index.ts",
     "types": "./dist/index.d.ts",
     "default": "./dist/index.js"
   }
