@@ -2,19 +2,21 @@ import { describe, expect, test } from "bun:test";
 
 import { embedTexts, probeEmbedDims } from "../src/index";
 
-// Any OpenAI-compatible `/v1/embeddings` server; defaults to local Ollama.
-const config = {
-  baseURL: process.env.EMBEDDING_E2E_BASE_URL ?? "http://localhost:11434/v1",
-  model: process.env.EMBEDDING_E2E_MODEL ?? "nomic-embed-text",
-};
+// Any OpenAI-compatible `/v1/embeddings` server. Skips unless
+// EMBEDDING_E2E_BASE_URL is set, so it never loads a model on this machine.
+const baseURL = process.env.EMBEDDING_E2E_BASE_URL;
+const model = process.env.EMBEDDING_E2E_MODEL ?? "nomic-embed-text";
 
 // Skips unless the server answers and lists the model.
-const reachable = await fetch(`${config.baseURL}/models`, {
-  signal: AbortSignal.timeout(1_000),
-}).then(
-  async (res) => res.ok && (await res.text()).includes(`"${config.model}`),
-  () => false,
-);
+const reachable =
+  baseURL !== undefined &&
+  (await fetch(`${baseURL}/models`, {
+    signal: AbortSignal.timeout(1_000),
+  }).then(
+    async (res) => res.ok && (await res.text()).includes(`"${model}`),
+    () => false,
+  ));
+const config = { baseURL: baseURL ?? "", model };
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0;

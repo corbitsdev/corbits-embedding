@@ -108,6 +108,7 @@ package depends only on the published surface).
 - `tests/retry.test.ts` — 429 retried once after `Retry-After` on the
   harness clock; 401 rejects without retry.
 - `tests/base64.test.ts` — `base64` and `float` agree over a real HTTP stub.
-- `tests/live.test.ts` — round trip against a real `/v1/embeddings`
-  (`EMBEDDING_E2E_BASE_URL`, default local Ollama; `EMBEDDING_E2E_MODEL`,
-  default `nomic-embed-text`). Skips when unreachable.
+- `live/embeddings.test.ts` (`bun run test:live`, not in `test` or CI) —
+  round trip against a real `/v1/embeddings` (`EMBEDDING_E2E_BASE_URL`,
+  required; `EMBEDDING_E2E_MODEL`, default `nomic-embed-text`).
+  Skips when unset or unreachable.
