@@ -17,7 +17,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "bun test ./src",
+    "test": "bun test ./src ./tests",
     "format": "prettier -w ."
   },
   "dependencies": {
