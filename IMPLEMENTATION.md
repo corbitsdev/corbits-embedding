@@ -101,14 +101,16 @@ package depends only on the published surface).
 
 ## Tests
 
-`bun run test` runs `bun test ./src ./tests`.
+`bun run test` runs `bun test ./src`; `bun run test:e2e` runs `bun test ./e2e`.
+Both run in CI.
 
 - `src/embed.test.ts` — units on `@intx/inference-testing` fakes: index
-  placement across batches, short reply, base64 decode.
-- `tests/retry.test.ts` — 429 retried once after `Retry-After` on the
-  harness clock; 401 rejects without retry.
-- `tests/base64.test.ts` — `base64` and `float` agree over a real HTTP stub.
-- `live/embeddings.test.ts` (`bun run test:live`, not in `test` or CI) —
-  round trip against a real `/v1/embeddings` (`EMBEDDING_E2E_BASE_URL`,
-  required; `EMBEDDING_E2E_MODEL`, default `nomic-embed-text`).
-  Skips when unset or unreachable.
+  placement across batches, short and duplicate replies, base64 decode,
+  non-JSON 200.
+- `e2e/retry.test.ts` — 429 retried after `Retry-After` (seconds, HTTP-date,
+  custom extractor) on the harness clock; 401 rejects without retry; timeout.
+- `e2e/wire.test.ts` — request URL, body fields and bearer header.
+- `e2e/base64.test.ts` — `base64` and `float` agree over a real HTTP stub.
+- `e2e/live.test.ts` — round trip against a real `/v1/embeddings`
+  (`EMBEDDING_E2E_BASE_URL`, required; `EMBEDDING_E2E_MODEL`, default
+  `nomic-embed-text`). Skips when unset or unreachable.
