@@ -28,11 +28,11 @@ bun add @corbits/embedding
 
 ## Dependencies
 
-| Package | Use |
-| --- | --- |
+| Package                            | Use                                                                                                   |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `@intx/inference` (peer, `^0.4.0`) | `BuiltRequest`, `createDefaultRetryPolicy`, error classifiers, `createDefaultScheduler` (caller-side) |
-| `@intx/types` (peer, `^0.4.0`) | `RetryPolicy`, `InferenceError` |
-| `arktype` | `EmbedConfigSchema` and the embeddings reply shape |
+| `@intx/types` (peer, `^0.4.0`)     | `RetryPolicy`, `InferenceError`                                                                       |
+| `arktype`                          | `EmbedConfigSchema` and the embeddings reply shape                                                    |
 
 Dev: `@intx/inference`, `@intx/types` and `@intx/inference-testing` pinned at 0.4.0, `@types/bun`, `prettier`, `typescript` 5.9.
 
