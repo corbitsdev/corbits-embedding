@@ -11,10 +11,10 @@ OpenAI, Ollama, TEI, vLLM, and Jina all serve the same wire shape. This package 
 ## Install
 
 ```bash
-bun add @corbits/embedding
+bun add @corbits/embedding @intx/inference@^0.4.0 @intx/types@^0.4.0
 ```
 
-Runs on Bun >= 1.2 or Node >= 24. The built `dist/` entry is the default import.
+Runs on Bun >= 1.2 or Node >= 24.
 
 ## Quickstart
 
@@ -32,7 +32,8 @@ console.log(vectors.length, vectors[0]?.length); // 2 768
 
 `embedTexts(texts, config, options?)` batches sequentially, posts each batch to
 `{baseURL}/embeddings`, and returns vectors in input order. `options` is
-optional: `deps` (defaults to global `fetch` and `createDefaultScheduler()`),
+optional: `deps` (defaults to global `fetch` and `@intx/inference`'s
+`createDefaultScheduler()`),
 `retryPolicy`, `extractRetryAfterMs`, and `signal`.
 
 ## Dimensionality
@@ -41,11 +42,11 @@ optional: `deps` (defaults to global `fetch` and `createDefaultScheduler()`),
 
 ## Errors
 
-Every failure — transport, HTTP status, or a 200 with an unexpected body — throws `EmbeddingRequestError` (`extends Error`), carrying the classified `InferenceError` as `reason` and the request `url`. A config that fails `EmbedConfigSchema` throws before any request.
+Every request failure — transport, HTTP status, or a 200 with an unexpected body — throws `EmbeddingRequestError` (`extends Error`), carrying the classified `InferenceError` as `reason` and the request `url`. A config that fails `EmbedConfigSchema` throws arktype's `TraversalError` before any request.
 
 ## Using with Interchange
 
-Transport, error classification, and retry build on `@intx/inference`: requests go through `deps.fetch`, failures classify into `InferenceError` just like chat calls, and `createDefaultRetryPolicy` guides backoff. A 429 from an embeddings endpoint behaves like one from a chat endpoint, and credential failures short-circuit. `@intx/inference` and `@intx/types` are peer dependencies, so the host's Interchange version is the one used.
+Requests go through `deps.fetch`, failures are classified into `@intx/inference`'s `InferenceError`, and `createDefaultRetryPolicy` decides retries: a 429 backs off and retries, a credential failure does not. `@intx/inference` and `@intx/types` are peer dependencies, so the host's Interchange version is the one used.
 
 ## License
 
