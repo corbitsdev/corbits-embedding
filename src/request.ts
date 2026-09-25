@@ -10,22 +10,6 @@ import {
 import type { InferenceError, RetryPolicy } from "@intx/types/runtime";
 
 /**
- * One JSON request, classified and retried the way Interchange classifies and
- * retries an inference call.
- *
- * `runInference` cannot serve this: it is turn-shaped and streams SSE, whereas
- * an embedding is one-shot JSON. What carries over is everything around it — the
- * single `deps.fetch` transport, the error taxonomy, and the retry policy — so
- * a 429 from an embedding endpoint is classified and backed off exactly as one from
- * a chat endpoint.
- *
- * XXX: this file is duplicated, modulo the wording of this comment, in `@corbits/reranking`. It is not
- * shared infrastructure yet — the intended home is `@intx/inference` itself, as
- * a non-streaming sibling of `runInference`, pending that upstream
- * conversation. Fix both copies or neither.
- */
-
-/**
  * What the transport actually reads from the harness.
  *
  * Deliberately narrower than `Dependencies`, whose `adapters: AdapterRegistry`
@@ -37,19 +21,17 @@ export type RequestDependencies = Pick<Dependencies, "fetch" | "scheduler">;
 
 /**
  * Raised for every failure mode: transport, HTTP status, and a 200 whose body
- * is not the JSON the protocol promises.
- *
- * XXX: duplicated alongside this module, so `instanceof` does not hold across
- * the embedding and reranking copies. Discriminate on
- * `error.name === "ModelRequestError"` when catching both.
+ * is not the embeddings reply the protocol promises. `reason` is the
+ * Interchange classification, so retryability and status read the same as
+ * for an inference call.
  */
-export class ModelRequestError extends Error {
+export class EmbeddingRequestError extends Error {
   constructor(
     readonly reason: InferenceError,
     readonly url: string,
   ) {
     super(`${url}: ${reason.message}`);
-    this.name = "ModelRequestError";
+    this.name = "EmbeddingRequestError";
   }
 }
 
@@ -60,23 +42,22 @@ export class ModelRequestError extends Error {
  */
 export type RetryAfterExtractor = (headers: Headers) => number | undefined;
 
-export type RunRequestOptions = {
-  deps: RequestDependencies;
+type RunRequestOptions = {
   /** Defaults to Interchange's policy: back off retryables, abort the rest. */
-  retryPolicy?: RetryPolicy;
+  retryPolicy: RetryPolicy | undefined;
   /**
    * Per-attempt ceiling, enforced alongside any caller `signal` rather than
    * instead of it. A cold local model can take a while to page in.
    */
-  timeoutMs?: number;
+  timeoutMs: number | undefined;
   /**
    * Reads `Retry-After` off a failed response. Mirrors `ProviderAdapter`'s
    * member of the same name, so a provider that signals pacing its own way can
    * override without touching the transport. Defaults to
    * {@link extractRetryAfterMs}.
    */
-  extractRetryAfterMs?: RetryAfterExtractor;
-  signal?: AbortSignal;
+  extractRetryAfterMs: RetryAfterExtractor | undefined;
+  signal: AbortSignal | undefined;
 };
 
 type Attempt =
@@ -96,7 +77,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  * absolute instant, so it cannot be resolved against the harness scheduler's
  * virtual clock. Upstream's extractor has the same constraint.
  */
-export const extractRetryAfterMs: RetryAfterExtractor = (headers) => {
+const extractRetryAfterMs: RetryAfterExtractor = (headers) => {
   const header = headers.get("retry-after")?.trim();
   if (header === undefined || header === "") return undefined;
 
@@ -198,11 +179,22 @@ function delay(
   });
 }
 
+/**
+ * One JSON request, classified and retried the way Interchange classifies and
+ * retries an inference call.
+ *
+ * `runInference` cannot serve this: it is turn-shaped and streams SSE, whereas
+ * an embedding is one-shot JSON. What carries over is everything around it — the
+ * single `deps.fetch` transport, the error taxonomy, and the retry policy — so
+ * a 429 from an embedding endpoint is classified and backed off exactly as one from
+ * a chat endpoint.
+ */
 export async function runJSONRequest(
   request: BuiltRequest,
+  deps: RequestDependencies,
   options: RunRequestOptions,
 ): Promise<unknown> {
-  const { deps, signal } = options;
+  const { signal } = options;
   const policy = options.retryPolicy ?? createDefaultRetryPolicy();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const extractRetryAfter = options.extractRetryAfterMs ?? extractRetryAfterMs;
@@ -227,7 +219,7 @@ export async function runJSONRequest(
       elapsedMs: deps.scheduler.now() - startedAt,
     });
     if (decision.kind === "abort") {
-      throw new ModelRequestError(result.error, request.url);
+      throw new EmbeddingRequestError(result.error, request.url);
     }
 
     // Aborting mid-delay wakes immediately; the next attempt then fails its

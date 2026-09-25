@@ -1,8 +1,13 @@
 import { type } from "arktype";
-import type { BuiltRequest } from "@intx/inference";
+import {
+  classifyProtocolMismatch,
+  createDefaultScheduler,
+  type BuiltRequest,
+} from "@intx/inference";
 import type { RetryPolicy } from "@intx/types/runtime";
 
 import {
+  EmbeddingRequestError,
   runJSONRequest,
   type RequestDependencies,
   type RetryAfterExtractor,
@@ -42,7 +47,7 @@ export type EmbedConfig = typeof EmbedConfigSchema.infer;
  */
 const EmbedResponse = type({
   data: type({
-    index: "number",
+    index: "number.integer",
     embedding: "number[] | string",
   }).array(),
 });
@@ -51,7 +56,8 @@ const DEFAULT_BATCH_SIZE = 32;
 const PROBE_TEXT = "embedding dimension probe";
 
 export type EmbedOptions = {
-  deps: RequestDependencies;
+  /** Defaults to global `fetch` and Interchange's default scheduler. */
+  deps?: RequestDependencies;
   retryPolicy?: RetryPolicy;
   /**
    * Reads `Retry-After` off a failed response, for a provider that signals
@@ -77,22 +83,27 @@ function buildRequest(
   return {
     url: `${config.baseURL}/embeddings`,
     headers,
+    // Unset `dimensions` and `encoding_format` are dropped by JSON.stringify.
     body: JSON.stringify({
       model: config.model,
       input,
-      ...(config.dimensions !== undefined
-        ? { dimensions: config.dimensions }
-        : {}),
-      ...(config.encodingFormat !== undefined
-        ? { encoding_format: config.encodingFormat }
-        : {}),
+      dimensions: config.dimensions,
+      encoding_format: config.encodingFormat,
     }),
   };
 }
 
 /** Unpacks the `base64` encoding: a little-endian float32 buffer. */
-function decodeBase64Embedding(encoded: string): number[] {
-  const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+function decodeBase64Embedding(encoded: string): number[] | undefined {
+  let binary: string;
+  try {
+    binary = atob(encoded);
+  } catch {
+    return undefined;
+  }
+  if (binary.length % Float32Array.BYTES_PER_ELEMENT !== 0) return undefined;
+
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   const floats = new Float32Array(
     bytes.buffer,
     bytes.byteOffset,
@@ -114,32 +125,37 @@ function parseResponse(
   url: string,
   expected: number,
 ): number[][] {
+  const malformed = (detail: string): EmbeddingRequestError =>
+    new EmbeddingRequestError(classifyProtocolMismatch(detail, body), url);
+
   const parsed = EmbedResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `${url}: malformed embeddings response — ${parsed.summary}`,
-    );
+    throw malformed(`malformed embeddings response — ${parsed.summary}`);
   }
   if (parsed.data.length !== expected) {
-    throw new Error(
-      `${url}: expected ${expected} embeddings, got ${parsed.data.length}`,
+    throw malformed(
+      `expected ${expected} embeddings, got ${parsed.data.length}`,
     );
   }
 
-  const vectors = new Array<number[] | undefined>(expected);
-  for (const entry of parsed.data) {
-    const taken = entry.index in vectors;
-    if (entry.index < 0 || entry.index >= expected || taken) {
-      throw new Error(`${url}: bad embedding index ${entry.index}`);
+  const seen = new Set<number>();
+  for (const { index } of parsed.data) {
+    if (index < 0 || index >= expected || seen.has(index)) {
+      throw malformed(`bad embedding index ${index}`);
     }
-    vectors[entry.index] =
-      typeof entry.embedding === "string"
-        ? decodeBase64Embedding(entry.embedding)
-        : entry.embedding;
+    seen.add(index);
   }
 
-  // No slot is empty: the count matches and every index was distinct.
-  return vectors as number[][];
+  // Every index in [0, expected) appears exactly once, so sorting restores
+  // request order.
+  return parsed.data
+    .toSorted((a, b) => a.index - b.index)
+    .map(({ embedding }) => {
+      if (typeof embedding !== "string") return embedding;
+      const decoded = decodeBase64Embedding(embedding);
+      if (decoded === undefined) throw malformed("invalid base64 embedding");
+      return decoded;
+    });
 }
 
 function batches(
@@ -161,32 +177,24 @@ function batches(
 export async function embedTexts(
   texts: readonly string[],
   config: EmbedConfig,
-  options: EmbedOptions,
+  options: EmbedOptions = {},
 ): Promise<number[][]> {
+  const valid = EmbedConfigSchema.assert(config);
   if (texts.length === 0) return [];
 
-  const batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
-  if (!Number.isInteger(batchSize) || batchSize < 1) {
-    throw new RangeError(
-      `batchSize must be an integer >= 1, got ${batchSize}: a batch size below 1 would never advance through the input`,
-    );
-  }
+  const deps = options.deps ?? {
+    fetch,
+    scheduler: createDefaultScheduler(),
+  };
 
   const vectors: number[][] = [];
-  for (const batch of batches(texts, batchSize)) {
-    const request = buildRequest(config, batch);
-    const body = await runJSONRequest(request, {
-      deps: options.deps,
-      ...(options.retryPolicy !== undefined
-        ? { retryPolicy: options.retryPolicy }
-        : {}),
-      ...(config.timeoutMs !== undefined
-        ? { timeoutMs: config.timeoutMs }
-        : {}),
-      ...(options.extractRetryAfterMs !== undefined
-        ? { extractRetryAfterMs: options.extractRetryAfterMs }
-        : {}),
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+  for (const batch of batches(texts, valid.batchSize ?? DEFAULT_BATCH_SIZE)) {
+    const request = buildRequest(valid, batch);
+    const body = await runJSONRequest(request, deps, {
+      retryPolicy: options.retryPolicy,
+      timeoutMs: valid.timeoutMs,
+      extractRetryAfterMs: options.extractRetryAfterMs,
+      signal: options.signal,
     });
     vectors.push(...parseResponse(body, request.url, batch.length));
   }
@@ -202,11 +210,14 @@ export async function embedTexts(
  */
 export async function probeEmbedDims(
   config: EmbedConfig,
-  options: EmbedOptions,
+  options: EmbedOptions = {},
 ): Promise<number> {
   const [vector] = await embedTexts([PROBE_TEXT], config, options);
   if (vector === undefined) {
-    throw new Error(`${config.baseURL}: embed probe returned no vector`);
+    throw new EmbeddingRequestError(
+      classifyProtocolMismatch("embed probe returned no vector"),
+      config.baseURL,
+    );
   }
   return vector.length;
 }
