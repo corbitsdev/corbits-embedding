@@ -1,13 +1,16 @@
 import { type } from "arktype";
 import {
   classifyProtocolMismatch,
+  createDefaultRetryPolicy,
   createDefaultScheduler,
   type BuiltRequest,
 } from "@intx/inference";
 import type { RetryPolicy } from "@intx/types/runtime";
 
 import {
+  DEFAULT_TIMEOUT_MS,
   EmbeddingRequestError,
+  extractRetryAfterMs,
   runJSONRequest,
   type RequestDependencies,
   type RetryAfterExtractor,
@@ -58,10 +61,12 @@ const PROBE_TEXT = "embedding dimension probe";
 export type EmbedOptions = {
   /** Defaults to global `fetch` and Interchange's default scheduler. */
   deps?: RequestDependencies;
+  /** Defaults to Interchange's policy: back off retryables, abort the rest. */
   retryPolicy?: RetryPolicy;
   /**
    * Reads `Retry-After` off a failed response, for a provider that signals
-   * pacing its own way. Named after `ProviderAdapter.extractRetryAfterMs`.
+   * pacing its own way. Defaults to seconds or HTTP-date parsing. Named
+   * after `ProviderAdapter.extractRetryAfterMs`.
    * There is no adapter object here because every provider serves the one
    * `/v1/embeddings` shape, so this hangs off the options instead.
    */
@@ -187,13 +192,17 @@ export async function embedTexts(
     scheduler: createDefaultScheduler(),
   };
 
+  const retryPolicy = options.retryPolicy ?? createDefaultRetryPolicy();
+  const timeoutMs = valid.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const extractRetryAfter = options.extractRetryAfterMs ?? extractRetryAfterMs;
+
   const vectors: number[][] = [];
   for (const batch of batches(texts, valid.batchSize ?? DEFAULT_BATCH_SIZE)) {
     const request = buildRequest(valid, batch);
     const body = await runJSONRequest(request, deps, {
-      retryPolicy: options.retryPolicy,
-      timeoutMs: valid.timeoutMs,
-      extractRetryAfterMs: options.extractRetryAfterMs,
+      retryPolicy,
+      timeoutMs,
+      extractRetryAfterMs: extractRetryAfter,
       signal: options.signal,
     });
     vectors.push(...parseResponse(body, request.url, batch.length));
