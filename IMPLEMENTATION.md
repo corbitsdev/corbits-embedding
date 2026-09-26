@@ -80,8 +80,8 @@ Reply: `{ data: { index: number, embedding: number[] | string }[] }`.
 Base64 strings decode with `atob` → `Uint8Array` → little-endian
 `Float32Array` → `number[]`.
 
-`embedTexts` also range-checks `batchSize` at runtime so a value that
-bypassed the schema cannot stall `batches` (`i += size`).
+`embedTexts` asserts `config` against `EmbedConfigSchema` first, so a
+`batchSize` below 1 cannot stall `batches` (`i += size`).
 
 ## Errors and retry
 
@@ -92,15 +92,12 @@ bypassed the schema cannot stall `batches` (`i += size`).
 3. network throw → `classifyNetworkError` or `classifyAbortError`
 4. JSON parse fail → `classifyProtocolMismatch`
 5. `retryPolicy` (default `createDefaultRetryPolicy`) → `abort` throws
-   `ModelRequestError`, else sleep `delayMs` on `deps.scheduler`
+   `EmbeddingRequestError`, else sleep `delayMs` on `deps.scheduler`
 
 `extractRetryAfterMs` reads `Retry-After` as seconds or HTTP-date, clamped
 at zero. Callers override via `EmbedOptions.extractRetryAfterMs` (same
 signature as Interchange's unexported extractor; re-declared so this
 package depends only on the published surface).
-
-`ModelRequestError.name` is `"ModelRequestError"`. Discriminate on the
-name when catching both this package and `@corbits/reranking`.
 
 ## Tests
 

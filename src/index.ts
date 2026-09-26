@@ -6,9 +6,7 @@ export {
   type EmbedOptions,
 } from "./embed.js";
 export {
-  runJSONRequest,
-  extractRetryAfterMs,
-  ModelRequestError,
+  EmbeddingRequestError,
+  type RequestDependencies,
   type RetryAfterExtractor,
-  type RunRequestOptions,
 } from "./request.js";
