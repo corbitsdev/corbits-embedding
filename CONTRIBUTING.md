@@ -2,29 +2,23 @@
 
 ## Development
 
-```bash
+```sh
 bun install
-bun run typecheck
-bun run lint
-bun run test
-bun run test:e2e
+bun run check
 ```
 
-`bun run test` runs the colocated units in `src/`. `bun run test:e2e` runs
-`e2e/`: retry, wire and base64 cases on the `@intx/inference-testing` harness
-and a local HTTP stub, plus a `/v1/embeddings` round trip that skips unless
-`EMBEDDING_E2E_BASE_URL` is set; point it at a remote server rather than
-loading models locally:
+`bun run check` runs typecheck, lint, format check and unit tests. `bun run format` rewrites the tree.
 
-```bash
-EMBEDDING_E2E_BASE_URL=http://100.113.184.123:11434/v1 bun run test:e2e
+Contributors sign the [CLA](CLA.md) on their first PR; the CLA bot explains how.
+
+`bun run test:e2e` runs `e2e/`: retry, wire and base64 cases on the
+`@intx/inference-testing` harness and a local HTTP stub, plus a
+`/v1/embeddings` round trip that skips unless `EMBEDDING_E2E_BASE_URL` is set
+(`EMBEDDING_E2E_MODEL` defaults to `nomic-embed-text`):
+
+```sh
+EMBEDDING_E2E_BASE_URL=http://<host>:11434/v1 bun run test:e2e
 ```
-
-`EMBEDDING_E2E_MODEL` defaults to `nomic-embed-text`.
-
-## Versioning
-
-Semver. Releases run `bun run build && npm publish` with green CI.
 
 ## Commit messages
 
