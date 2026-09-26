@@ -101,8 +101,14 @@ package depends only on the published surface).
 
 ## Tests
 
-`bun run test` is `bun test ./src`. Coverage is the client contract: empty
-input, URL and body knobs, auth header presence, batch split and order,
-`batchSize` rejection, malformed / short / duplicate-index replies,
-index-not-position placement, 429 retry, 401 abort, `probeEmbedDims`,
-overridable `Retry-After`.
+`bun run test` runs `bun test ./src ./tests`.
+
+- `src/embed.test.ts` — units on `@intx/inference-testing` fakes: index
+  placement across batches, short reply, base64 decode.
+- `tests/retry.test.ts` — 429 retried once after `Retry-After` on the
+  harness clock; 401 rejects without retry.
+- `tests/base64.test.ts` — `base64` and `float` agree over a real HTTP stub.
+- `live/embeddings.test.ts` (`bun run test:live`, not in `test` or CI) —
+  round trip against a real `/v1/embeddings` (`EMBEDDING_E2E_BASE_URL`,
+  required; `EMBEDDING_E2E_MODEL`, default `nomic-embed-text`).
+  Skips when unset or unreachable.

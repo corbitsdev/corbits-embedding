@@ -21,8 +21,8 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
-      - run: bun test ./src
-      - run: bunx prettier --check src
+      - run: bun run test
+      - run: bunx prettier --check src tests
       - run: bun run build
       - name: Import packed dist with Node
         run: |
