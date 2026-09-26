@@ -24,7 +24,7 @@ jobs:
       - run: bun run lint
       - run: bun run test
       - run: bun run test:e2e
-      - run: bunx prettier --check .
+      - run: bun run format:check
       - run: bun run build
       - name: Import packed dist with Node
         run: |
