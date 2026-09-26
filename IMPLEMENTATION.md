@@ -30,12 +30,11 @@ bun add @corbits/embedding
 
 | Package | Use |
 | --- | --- |
-| `@intx/inference` | `BuiltRequest`, `createDefaultRetryPolicy`, error classifiers, `createDefaultScheduler` (caller-side) |
-| `@intx/types` | `RetryPolicy`, `InferenceError` |
-| `@intx/log` | Transitive Interchange surface (not imported by this package's sources) |
+| `@intx/inference` (peer, `^0.4.0`) | `BuiltRequest`, `createDefaultRetryPolicy`, error classifiers, `createDefaultScheduler` (caller-side) |
+| `@intx/types` (peer, `^0.4.0`) | `RetryPolicy`, `InferenceError` |
 | `arktype` | `EmbedConfigSchema` and the embeddings reply shape |
 
-Dev: `@intx/inference-testing`, `@types/bun`, `prettier`, `typescript` 5.9.
+Dev: `@intx/inference`, `@intx/types` and `@intx/inference-testing` pinned at 0.4.0, `@types/bun`, `prettier`, `typescript` 5.9.
 
 ## HTTP
 
