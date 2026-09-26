@@ -8,14 +8,14 @@ built on it. There is no provider registry. Every call is HTTP POST to
 
 Callers import from `@corbits/embedding`. The barrel is the public surface:
 
-| Export | Role |
-| --- | --- |
-| `embedTexts` | Batch texts, post sequentially, return `number[][]` in input order |
-| `probeEmbedDims` | Embed one probe string; report the vector length that came back |
-| `EmbedConfig` / `EmbedConfigSchema` | Endpoint, model, and optional knobs |
-| `EmbedOptions` | Optional harness deps, retry, `Retry-After` override, abort |
-| `RequestDependencies` / `RetryAfterExtractor` | Types of the `EmbedOptions` fields |
-| `EmbeddingRequestError` | Every request failure — `reason` is the classified `InferenceError` |
+| Export                                        | Role                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| `embedTexts`                                  | Batch texts, post sequentially, return `number[][]` in input order  |
+| `probeEmbedDims`                              | Embed one probe string; report the vector length that came back     |
+| `EmbedConfig` / `EmbedConfigSchema`           | Endpoint, model, and optional knobs                                 |
+| `EmbedOptions`                                | Optional harness deps, retry, `Retry-After` override, abort         |
+| `RequestDependencies` / `RetryAfterExtractor` | Types of the `EmbedOptions` fields                                  |
+| `EmbeddingRequestError`                       | Every request failure — `reason` is the classified `InferenceError` |
 
 The JSON transport (`runJSONRequest`) is private.
 
