@@ -1,7 +1,7 @@
 {
   "name": "@corbits/embedding",
   "description": "Embedding client for OpenAI-compatible /v1/embeddings endpoints, built on the Interchange inference primitives",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "LGPL-2.1-only",
   "author": "Sawyer Cutler <sawyer@dirtroad.dev>",
   "type": "module",
@@ -18,8 +18,8 @@
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "bun test ./src ./tests",
-    "test:live": "bun test ./live",
+    "test": "bun test ./src",
+    "test:e2e": "bun test ./e2e",
     "format": "prettier -w ."
   },
   "dependencies": {
