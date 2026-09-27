@@ -37,6 +37,25 @@ test("sends only configured fields to {baseURL}/embeddings", async () => {
   expect(await run(harness, pending)).toEqual([[1]]);
 });
 
+test("trims trailing slashes from baseURL", async () => {
+  harness = setupHarness();
+  const stream = harness.scenario.createStream();
+  harness.scenario.whenRequestMatches(
+    (req) => req.url === "https://embed.example/v1/embeddings",
+    stream,
+  );
+  stream.enqueueAll(
+    [new TextEncoder().encode('{"data":[{"index":0,"embedding":[1]}]}')],
+    { startAt: 1 },
+  );
+  const pending = embedTexts(
+    ["a"],
+    { ...CONFIG, baseURL: "https://embed.example/v1//" },
+    { deps: harness.deps },
+  );
+  expect(await run(harness, pending)).toEqual([[1]]);
+});
+
 test("sends a bearer token only when apiKey is set", async () => {
   harness = setupHarness();
   const stream = harness.scenario.createStream();

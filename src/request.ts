@@ -63,12 +63,18 @@ type Attempt =
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
+const MAX_RETRY_AFTER_MS = 60_000;
+
+const clampRetryAfter = (ms: number): number =>
+  Math.min(MAX_RETRY_AFTER_MS, Math.max(0, ms));
+
 /**
  * `Retry-After` in seconds or as an HTTP date; undefined when absent.
  *
- * Both branches clamp at zero. A server may name an instant that has already
- * passed, and `Retry-After: -5` is not unheard of; a negative delay would flow
- * into the retry policy as though it were a pacing hint.
+ * Both branches clamp to [0, 60s]. A server may name an instant that has
+ * already passed, and `Retry-After: -5` is not unheard of; a negative delay
+ * would flow into the retry policy as though it were a pacing hint. A day-long
+ * `Retry-After` would stall the caller for that long.
  *
  * The HTTP-date branch is wall-clock by necessity — the header names an
  * absolute instant, so it cannot be resolved against the harness scheduler's
@@ -79,10 +85,10 @@ export const extractRetryAfterMs: RetryAfterExtractor = (headers) => {
   if (header === undefined || header === "") return undefined;
 
   const seconds = Number(header);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1_000);
+  if (Number.isFinite(seconds)) return clampRetryAfter(seconds * 1_000);
 
   const at = Date.parse(header);
-  return Number.isNaN(at) ? undefined : Math.max(0, at - Date.now());
+  return Number.isNaN(at) ? undefined : clampRetryAfter(at - Date.now());
 };
 
 async function attemptOnce(

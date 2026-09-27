@@ -165,3 +165,16 @@ test("reports a caller abort as aborted, without retrying", async () => {
     reason: { category: "aborted" },
   });
 });
+
+test("caps a Retry-After at 60 seconds", async () => {
+  harness = setupHarness({ enableInferenceTimers: true });
+  reply(harness, "rate limited", 429, { "retry-after": "86400" });
+  reply(harness, JSON.stringify({ data: [{ index: 0, embedding: [1] }] }), 200);
+
+  const pending = embedTexts(["a"], CONFIG, { deps: harness.deps });
+  await harness.run();
+
+  expect(await pending).toEqual([[1]]);
+  expect(harness.clock.now()).toBeGreaterThanOrEqual(60_000);
+  expect(harness.clock.now()).toBeLessThan(61_000);
+});

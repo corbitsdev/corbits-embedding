@@ -53,24 +53,24 @@ console.log(vectors.length, vectors[0]?.length); // 2 768
 
 ### Config
 
-| Field            | Type                   | Description                                                                                 |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
-| `baseURL`        | `string`               | Server root with its version path, such as `http://host:11434/v1`.                          |
-| `model`          | `string`               | Model name.                                                                                 |
-| `apiKey`         | `string?`              | Sent as a bearer token.                                                                     |
-| `dimensions`     | `number?`              | Requested output dimension. Sent only when set; a reply of any other dimension is rejected. |
-| `encodingFormat` | `"float" \| "base64"?` | Wire format. Defaults to `float`. Results are always `number[]`.                            |
-| `batchSize`      | `number?`              | Texts per request. Defaults to 32.                                                          |
-| `timeoutMs`      | `number?`              | Per-attempt timeout; a timed-out attempt is retried. Defaults to 30000.                     |
+| Field            | Type                   | Description                                                                                      |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------ |
+| `baseURL`        | `string`               | Server root with its version path, such as `http://host:11434/v1`. Trailing slashes are ignored. |
+| `model`          | `string`               | Model name.                                                                                      |
+| `apiKey`         | `string?`              | Sent as a bearer token.                                                                          |
+| `dimensions`     | `number?`              | Requested output dimension. Sent only when set; a reply of any other dimension is rejected.      |
+| `encodingFormat` | `"float" \| "base64"?` | Wire format. Defaults to `float`. Results are always `number[]`.                                 |
+| `batchSize`      | `number?`              | Texts per request. Defaults to 32.                                                               |
+| `timeoutMs`      | `number?`              | Per-attempt timeout; a timed-out attempt is retried. Defaults to 30000.                          |
 
 ### Options
 
-| Field                 | Description                                                                     |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `deps`                | `{ fetch, scheduler }`. Defaults to global `fetch` and Interchange's scheduler. |
-| `retryPolicy`         | Retry policy. Defaults to Interchange's policy.                                 |
-| `extractRetryAfterMs` | Reads the server's retry delay. Defaults to parsing `Retry-After`.              |
-| `signal`              | Aborts all pending requests.                                                    |
+| Field                 | Description                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `deps`                | `{ fetch, scheduler }`. Defaults to global `fetch` and Interchange's scheduler.          |
+| `retryPolicy`         | Retry policy. Defaults to Interchange's policy.                                          |
+| `extractRetryAfterMs` | Reads the server's retry delay. Defaults to parsing `Retry-After`, capped at 60 seconds. |
+| `signal`              | Aborts all pending requests.                                                             |
 
 ### Errors
 

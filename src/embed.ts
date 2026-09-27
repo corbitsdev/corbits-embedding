@@ -86,7 +86,7 @@ function buildRequest(
   }
 
   return {
-    url: `${config.baseURL}/embeddings`,
+    url: `${config.baseURL.replace(/\/+$/, "")}/embeddings`,
     headers,
     // Unset `dimensions` and `encoding_format` are dropped by JSON.stringify.
     body: JSON.stringify({
