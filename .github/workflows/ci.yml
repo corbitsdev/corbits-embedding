@@ -1,38 +1,28 @@
-name: CI
+name: ci
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [24]
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 24
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bunx tsc --noEmit
-      - run: bun run lint
-      - run: bun run test
+      - run: bun run check
       - run: bun run test:e2e
-      - run: bun run format:check
-      - run: bun run build
-      - name: Import packed dist with Node
+      - name: node consumer smoke
         run: |
           set -euo pipefail
-          tarball=$(npm pack --silent | tail -n 1)
-          tmpdir=$(mktemp -d)
-          trap 'rm -rf "$tmpdir" "$tarball"' EXIT
-          cd "$tmpdir"
-          npm init -y >/dev/null
-          npm install "$OLDPWD/$tarball"
-          node --input-type=module -e "import { embedTexts } from '@corbits/embedding'; if (typeof embedTexts !== 'function') process.exit(1)"
+          TARBALL="$PWD/$(npm pack --silent)"
+          mkdir -p "$RUNNER_TEMP/c" && cd "$RUNNER_TEMP/c"
+          npm init -y >/dev/null && npm pkg set type=module >/dev/null
+          npm install "$TARBALL"
+          node -e 'import("@corbits/embedding").then((m) => { for (const n of ["embedTexts", "probeEmbedDims", "EmbeddingRequestError"]) if (typeof m[n] !== "function") throw new Error("missing export: " + n); })'
