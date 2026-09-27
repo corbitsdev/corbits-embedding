@@ -1,96 +1,98 @@
 # @corbits/embedding
 
-One API for every embedding provider. Point at any OpenAI-compatible `/v1/embeddings` endpoint, swap models with a config change, and get ordered vectors back.
+Batched text embeddings over any OpenAI-compatible `/v1/embeddings` endpoint, built on `@intx/inference` retries and error classification. A retrieval building block for Corbits and Interchange agents that also works standalone.
 
-OpenAI, Ollama, TEI, vLLM, and Jina all serve the same wire shape. This package is one code path over that shape, with parameters for what varies between providers:
+## Why @corbits/embedding?
 
-- `dimensions` — Matryoshka truncation for models that support it, including OpenAI `text-embedding-3` (down to 256), Jina v3 (32), and Jina v4 (128). Sent only when set, so models without MRL stay happy.
-- `encodingFormat` — `float` (default) or compact `base64`.
-- `batchSize` — inputs per request (default 32). Tune it to provider caps and per-request token ceilings.
+1. **One client for every provider.** OpenAI, Ollama, TEI, vLLM and Jina all speak the same wire format. Switching models is a config change.
+2. **Order-safe batching.** Inputs are split into batches, and vectors come back in input order, placed by the index each response echoes. Short or duplicate replies throw instead of misaligning results.
+3. **Interchange retry semantics.** Requests run through `@intx/inference`, so a 429 backs off and a 401 fails the same way it does for inference calls. Failures throw a typed `EmbeddingRequestError`.
 
-Transport, error classification, and retry build on `@intx/inference`: requests go through the shared `deps.fetch` path, failures classify into `InferenceError` just like chat calls, and `createDefaultRetryPolicy` guides backoff. A 429 from an embeddings endpoint behaves like one from a chat endpoint, and credential failures short-circuit.
+It does not store or search vectors. For that, pair it with [`@corbits/memory`](https://github.com/corbitsdev/corbits-memory).
 
 ## Install
 
 ```bash
-bun add @corbits/embedding
+bun add @corbits/embedding @intx/inference@^0.4.0 @intx/types@^0.4.0
 ```
 
-Runs on Bun >= 1.2 or Node >= 24. The built `dist/` entry is the default import.
+Runs on Bun >= 1.2 or Node >= 24.
 
 ## Quickstart
 
-This package never touches credential storage or config sources — it takes an
-already-built `EmbedConfig`. Where that config comes from is the host's
-choice; `@corbits/memory`, for example, reads it straight from
-`EMBED_BASE_URL`/`EMBED_MODEL`/`EMBED_API_KEY` env vars, all-or-nothing on the
-first two. A host wraps `embedTexts` in a function of its own that builds the
-config once (at startup, or per call) and probes dimensionality up front so a
-later model swap is caught as a migration, not a silent width mismatch.
+Needs a local Ollama with `nomic-embed-text` pulled.
 
 ```ts
-import { createDefaultScheduler } from "@intx/inference";
-import {
-  embedTexts,
-  probeEmbedDims,
-  type EmbedConfig,
-} from "@corbits/embedding";
+import { embedTexts } from "@corbits/embedding";
 
-export function loadEmbedConfig(): EmbedConfig | undefined {
-  const baseURL = process.env["EMBED_BASE_URL"];
-  const model = process.env["EMBED_MODEL"];
-  if (baseURL === undefined || model === undefined) return undefined;
-
-  const apiKey = process.env["EMBED_API_KEY"];
-  return { baseURL, model, ...(apiKey !== undefined ? { apiKey } : {}) };
-}
-
-export async function embed(
-  texts: readonly string[],
-  config: EmbedConfig,
-): Promise<number[][]> {
-  const deps = { fetch, scheduler: createDefaultScheduler() };
-  return embedTexts(texts, config, { deps });
-}
-
-// At startup: fail fast if the configured model's width doesn't match
-// what's already stored.
-const config = loadEmbedConfig();
-if (config !== undefined) {
-  const deps = { fetch, scheduler: createDefaultScheduler() };
-  const dims = await probeEmbedDims(config, { deps });
-}
+const vectors = await embedTexts(["a", "b"], {
+  baseURL: "http://localhost:11434/v1",
+  model: "nomic-embed-text",
+});
+console.log(vectors.length, vectors[0]?.length); // 2 768
 ```
 
-`embedTexts(texts, config, options)` batches sequentially, posts each batch to
-`{baseURL}/embeddings`, and returns vectors in input order. `options` carries
-`deps` (a host's real `fetch` plus `createDefaultScheduler()`, the production
-scheduler), with optional `retryPolicy`, `extractRetryAfterMs`, and `signal`.
+## Where it fits
 
-## Dimensionality
+[Interchange](https://github.com/faremeter/interchange) runs AI agents as principals (accounts that hold their own identity, permissions and credentials). Corbits packages add what an agent product needs around it.
 
-`probeEmbedDims(config, { deps })` embeds one probe string and reports the length received. Dimensionality follows the provider and the `dimensions` setting, so callers that persist vectors discover it at startup and treat a model swap as a migration. Representative widths: 1536 for OpenAI `text-embedding-3-small`, 768 for `nomic-embed-text`, 384 for `bge-small-en-v1.5`.
+- **Runs in:** any process: the Interchange hub (the multi-tenant control plane), an agent sidecar (the runtime next to each agent), or a plain script. No hub is required.
+- **Plugs into:** [`@intx/inference`](https://github.com/faremeter/interchange) for transport, retries and error classification, and [`@intx/types`](https://github.com/faremeter/interchange).
+- **Pairs with:** [`@corbits/reranking`](https://github.com/corbitsdev/corbits-reranking) to reorder results and [`@corbits/memory`](https://github.com/corbitsdev/corbits-memory) to store and search vectors.
 
-## Errors
+## Reference
 
-Every request failure — transport, HTTP status, or a 200 with an unexpected body — throws `EmbeddingRequestError` (`extends Error`), carrying the classified `InferenceError` as `reason` and the request `url`. A config that fails `EmbedConfigSchema` throws arktype's `TraversalError` before any request.
+| Export                                       | Description                                                 |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| `embedTexts(texts, config, options?)`        | Embeds the texts and returns one vector per text, in order. |
+| `probeEmbedDims(config, options?)`           | Embeds one probe string and returns the vector dimension.   |
+| `EmbedConfigSchema`, `EmbedConfig`           | Schema and type for `config`.                               |
+| `EmbedOptions`                               | Type for `options`.                                         |
+| `EmbeddingRequestError`                      | Thrown when a request fails.                                |
+| `RequestDependencies`, `RetryAfterExtractor` | Types for `options.deps` and `options.extractRetryAfterMs`. |
 
-## Interchange
+### Config
 
-Built on the shared `@intx/inference` transport, so an embeddings call fails and retries the same way a chat call does: same `deps.fetch` path, same `InferenceError` classification, same `createDefaultRetryPolicy` backoff. A retrieval pipeline typically pairs `probeEmbedDims` at startup with `embedTexts` batches at ingest and query time, as described above.
+| Field            | Type                   | Description                                                              |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------ |
+| `baseURL`        | `string`               | Server root with its version path, such as `http://host:11434/v1`.       |
+| `model`          | `string`               | Model name.                                                              |
+| `apiKey`         | `string?`              | Sent as a bearer token.                                                  |
+| `dimensions`     | `number?`              | Requested output dimension. Sent only when set; not all models honor it. |
+| `encodingFormat` | `"float" \| "base64"?` | Wire format. Defaults to `float`. Results are always `number[]`.         |
+| `batchSize`      | `number?`              | Texts per request. Defaults to 32.                                       |
+| `timeoutMs`      | `number?`              | Per-request timeout. Defaults to 30000.                                  |
 
-## Versioning
+### Options
 
-Semver. Releases run `bun run build && npm publish` with green CI.
+| Field                 | Description                                                                     |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `deps`                | `{ fetch, scheduler }`. Defaults to global `fetch` and Interchange's scheduler. |
+| `retryPolicy`         | Retry policy. Defaults to Interchange's policy.                                 |
+| `extractRetryAfterMs` | Reads the server's retry delay. Defaults to parsing `Retry-After`.              |
+| `signal`              | Aborts all pending requests.                                                    |
 
-## Development
+### Errors
 
-```bash
-bun install
-bun test ./src
-bunx tsc --noEmit
-```
+A failed request throws `EmbeddingRequestError` with a classified `reason` and the request `url`. An invalid config throws before any request is sent.
+
+### Dimensions
+
+Each model has a fixed output dimension: 768 for `nomic-embed-text`, 1536 for OpenAI `text-embedding-3-small`. If you store vectors, call `probeEmbedDims` at startup. Changing models changes the dimension, so treat it as a schema migration.
+
+## Using with Interchange
+
+`@intx/inference` and `@intx/types` are peer dependencies, so your host's Interchange version supplies them.
+
+To share your host's retry scheduler, pass it as `options.deps.scheduler` along with `fetch`.
+
+## Upgrading from 0.1
+
+- Install `@intx/inference` and `@intx/types` (^0.4.0) yourself. They are now peer dependencies.
+- `ModelRequestError` is renamed to `EmbeddingRequestError`.
+- `runJSONRequest`, `extractRetryAfterMs` and `RunRequestOptions` are no longer exported. To change how retry waits are read, pass `options.extractRetryAfterMs`.
+- Config and returned vectors are unchanged.
 
 ## License
 
-LGPL-2.1-only — see [`LICENSE`](LICENSE).
+[LGPL-2.1-only](https://github.com/corbitsdev/corbits-embedding/blob/main/LICENSE)
