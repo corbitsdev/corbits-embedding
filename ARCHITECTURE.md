@@ -13,32 +13,31 @@ Callers import from `@corbits/embedding`. The barrel is the public surface:
 | `embedTexts` | Batch texts, post sequentially, return `number[][]` in input order |
 | `probeEmbedDims` | Embed one probe string; report the vector length that came back |
 | `EmbedConfig` / `EmbedConfigSchema` | Endpoint, model, and optional knobs |
-| `EmbedOptions` | Harness deps plus optional retry, `Retry-After` override, abort |
-| `runJSONRequest` | Classified, retried JSON POST (sibling clients reuse this) |
-| `extractRetryAfterMs` | Default `Retry-After` reader (seconds or HTTP-date) |
-| `ModelRequestError` | Transport, HTTP, or non-JSON 200 — `reason` is the classified `InferenceError` |
+| `EmbedOptions` | Optional harness deps, retry, `Retry-After` override, abort |
+| `RequestDependencies` / `RetryAfterExtractor` | Types of the `EmbedOptions` fields |
+| `EmbeddingRequestError` | Every request failure — `reason` is the classified `InferenceError` |
+
+The JSON transport (`runJSONRequest`) is private.
 
 Quickstart shape (matches the README):
 
 ```ts
-import { createDefaultScheduler } from "@intx/inference";
-import { embedTexts, probeEmbedDims } from "@corbits/embedding";
+import { embedTexts } from "@corbits/embedding";
 
-const deps = { fetch, scheduler: createDefaultScheduler() };
-const [vector] = await embedTexts(
-  ["hello world"],
-  { baseURL: "http://localhost:11434/v1", model: "nomic-embed-text" },
-  { deps },
-);
+const [vector] = await embedTexts(["hello world"], {
+  baseURL: "http://localhost:11434/v1",
+  model: "nomic-embed-text",
+});
 ```
 
-`probeEmbedDims(config, { deps })` is the same config and deps; it is not a
+`probeEmbedDims(config)` is the same config and options; it is not a
 separate protocol.
 
 ## Request dependencies
 
 The transport reads only `fetch` and `scheduler` from the harness
-(`RequestDependencies`). That is deliberately narrower than Interchange
+(`RequestDependencies`), defaulting to global `fetch` and
+`createDefaultScheduler()`. That is deliberately narrower than Interchange
 `Dependencies`, whose `adapters` registry a caller should not have to
 assemble in order to embed a string. A real `Dependencies` still satisfies
 the pick structurally.
@@ -88,20 +87,22 @@ and `createDefaultRetryPolicy` (back off retryables, abort the rest). A 429
 is therefore classified and backed off as a chat 429 would be; a
 `credential_failure` aborts immediately.
 
-`runJSONRequest` is duplicated, modulo comments, in `@corbits/reranking`. It
-is not shared infrastructure yet — the intended home is `@intx/inference` as
-a non-streaming sibling of `runInference`. Until then, `ModelRequestError` is
-a distinct class in each package: `instanceof` does not hold across the two.
-Catch on `error.name === "ModelRequestError"`.
+Following Interchange, the `InferenceError` is carried as data on a thrown
+`Error` subclass (`EmbeddingRequestError`), never thrown itself.
+
+`runJSONRequest` is duplicated, modulo comments, in `@corbits/reranking`,
+which still throws its own `ModelRequestError`; code using both packages
+checks two error classes. The intended home for the transport is
+`@intx/inference`, as a non-streaming sibling of `runInference`.
 
 ## Failure modes
 
 - Transport, HTTP status, or a 200 whose body is not JSON →
-  `ModelRequestError` with classified `reason` and the URL.
-- Malformed embeddings JSON, wrong count, bad index → thrown `Error` (not
-  `ModelRequestError`); the protocol succeeded, the payload did not.
-- `batchSize` not an integer `>= 1` → `RangeError` before any request
-  (`i += size` of 0 would never advance).
+  `EmbeddingRequestError` with classified `reason` and the URL.
+- Malformed embeddings JSON, wrong count, bad index →
+  `EmbeddingRequestError` with a `classifyProtocolMismatch` reason.
+- Config failing `EmbedConfigSchema` (e.g. `batchSize` not an integer
+  `>= 1`) → arktype `TraversalError` before any request.
 - Empty `texts` → `[]`, no request.
 - Caller `signal` or per-attempt timeout (default 30s) abort the attempt;
   aborting mid-delay wakes immediately and the next attempt fails its

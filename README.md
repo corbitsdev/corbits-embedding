@@ -73,16 +73,7 @@ scheduler), with optional `retryPolicy`, `extractRetryAfterMs`, and `signal`.
 
 ## Errors
 
-Every failure mode — transport, HTTP status, or a 200 with an unexpected body — raises `ModelRequestError`, carrying the classified `InferenceError` as `reason` plus the request URL. The embedding and reranking packages each carry their own copy of this class while the shared transport is upstreamed, so code catching both discriminates on `error.name === "ModelRequestError"`.
-
-## Lower-level: transport
-
-The barrel also re-exports the one-shot JSON transport `embedTexts` is built on, for sibling clients that want the same classified, retried request path:
-
-- `runJSONRequest` — one JSON POST with error classification and retry.
-- `extractRetryAfterMs` — default `Retry-After` reader, overridable per call.
-- `ModelRequestError` — error for every failure mode, with `reason` and URL.
-- Types `RunRequestOptions` and `RetryAfterExtractor`.
+Every request failure — transport, HTTP status, or a 200 with an unexpected body — throws `EmbeddingRequestError` (`extends Error`), carrying the classified `InferenceError` as `reason` and the request `url`. A config that fails `EmbedConfigSchema` throws arktype's `TraversalError` before any request.
 
 ## Interchange
 

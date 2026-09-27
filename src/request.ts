@@ -3,27 +3,10 @@ import {
   classifyHTTPError,
   classifyNetworkError,
   classifyProtocolMismatch,
-  createDefaultRetryPolicy,
   type BuiltRequest,
   type Dependencies,
 } from "@intx/inference";
 import type { InferenceError, RetryPolicy } from "@intx/types/runtime";
-
-/**
- * One JSON request, classified and retried the way Interchange classifies and
- * retries an inference call.
- *
- * `runInference` cannot serve this: it is turn-shaped and streams SSE, whereas
- * an embedding is one-shot JSON. What carries over is everything around it — the
- * single `deps.fetch` transport, the error taxonomy, and the retry policy — so
- * a 429 from an embedding endpoint is classified and backed off exactly as one from
- * a chat endpoint.
- *
- * XXX: this file is duplicated, modulo the wording of this comment, in `@corbits/reranking`. It is not
- * shared infrastructure yet — the intended home is `@intx/inference` itself, as
- * a non-streaming sibling of `runInference`, pending that upstream
- * conversation. Fix both copies or neither.
- */
 
 /**
  * What the transport actually reads from the harness.
@@ -37,19 +20,17 @@ export type RequestDependencies = Pick<Dependencies, "fetch" | "scheduler">;
 
 /**
  * Raised for every failure mode: transport, HTTP status, and a 200 whose body
- * is not the JSON the protocol promises.
- *
- * XXX: duplicated alongside this module, so `instanceof` does not hold across
- * the embedding and reranking copies. Discriminate on
- * `error.name === "ModelRequestError"` when catching both.
+ * is not the embeddings reply the protocol promises. `reason` is the
+ * Interchange classification, so retryability and status read the same as
+ * for an inference call.
  */
-export class ModelRequestError extends Error {
+export class EmbeddingRequestError extends Error {
   constructor(
     readonly reason: InferenceError,
     readonly url: string,
   ) {
     super(`${url}: ${reason.message}`);
-    this.name = "ModelRequestError";
+    this.name = "EmbeddingRequestError";
   }
 }
 
@@ -60,30 +41,27 @@ export class ModelRequestError extends Error {
  */
 export type RetryAfterExtractor = (headers: Headers) => number | undefined;
 
-export type RunRequestOptions = {
-  deps: RequestDependencies;
-  /** Defaults to Interchange's policy: back off retryables, abort the rest. */
-  retryPolicy?: RetryPolicy;
+type RunRequestOptions = {
+  retryPolicy: RetryPolicy;
   /**
    * Per-attempt ceiling, enforced alongside any caller `signal` rather than
    * instead of it. A cold local model can take a while to page in.
    */
-  timeoutMs?: number;
+  timeoutMs: number;
   /**
    * Reads `Retry-After` off a failed response. Mirrors `ProviderAdapter`'s
    * member of the same name, so a provider that signals pacing its own way can
-   * override without touching the transport. Defaults to
-   * {@link extractRetryAfterMs}.
+   * override without touching the transport.
    */
-  extractRetryAfterMs?: RetryAfterExtractor;
-  signal?: AbortSignal;
+  extractRetryAfterMs: RetryAfterExtractor;
+  signal: AbortSignal | undefined;
 };
 
 type Attempt =
   | { ok: true; body: unknown }
   | { ok: false; error: InferenceError };
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+export const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
  * `Retry-After` in seconds or as an HTTP date; undefined when absent.
@@ -198,14 +176,23 @@ function delay(
   });
 }
 
+/**
+ * One JSON request, classified and retried the way Interchange classifies and
+ * retries an inference call.
+ *
+ * `runInference` cannot serve this: it is turn-shaped and streams SSE, whereas
+ * an embedding is one-shot JSON. What carries over is everything around it — the
+ * single `deps.fetch` transport, the error taxonomy, and the retry policy — so
+ * a 429 from an embedding endpoint is classified and backed off exactly as one from
+ * a chat endpoint.
+ */
 export async function runJSONRequest(
   request: BuiltRequest,
+  deps: RequestDependencies,
   options: RunRequestOptions,
 ): Promise<unknown> {
-  const { deps, signal } = options;
-  const policy = options.retryPolicy ?? createDefaultRetryPolicy();
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const extractRetryAfter = options.extractRetryAfterMs ?? extractRetryAfterMs;
+  const { retryPolicy: policy, timeoutMs, signal } = options;
+  const extractRetryAfter = options.extractRetryAfterMs;
 
   // Time comes from the harness scheduler, not globals, so a virtual-clock
   // test scheduler drives the retry loop deterministically.
@@ -227,7 +214,7 @@ export async function runJSONRequest(
       elapsedMs: deps.scheduler.now() - startedAt,
     });
     if (decision.kind === "abort") {
-      throw new ModelRequestError(result.error, request.url);
+      throw new EmbeddingRequestError(result.error, request.url);
     }
 
     // Aborting mid-delay wakes immediately; the next attempt then fails its

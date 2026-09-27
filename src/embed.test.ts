@@ -8,7 +8,7 @@ import {
   EmbedConfigSchema,
   type EmbedConfig,
 } from "./embed";
-import { extractRetryAfterMs, ModelRequestError } from "./request";
+import { EmbeddingRequestError } from "./request";
 
 const CONFIG: EmbedConfig = {
   baseURL: "https://embed.example/v1",
@@ -134,12 +134,12 @@ describe("embedTexts", () => {
   it("rejects a batchSize that is not an integer >= 1 instead of looping forever", async () => {
     // `batches` advances by `i += size`, so a size of 0 never advances and
     // grows the batch list until OOM. Fractional sizes would also stall or
-    // slice wrongly. Schema and runtime both require integer >= 1.
+    // slice wrongly. The schema requires integer >= 1.
     for (const batchSize of [0, -1, 0.5, Number.NaN, 1.5]) {
       const { deps: d, calls } = deps([embedding(3)]);
       await expect(
         embedTexts(["a"], { ...CONFIG, batchSize }, { deps: d }),
-      ).rejects.toBeInstanceOf(RangeError);
+      ).rejects.toThrow(/batchSize/);
       expect(calls).toHaveLength(0);
     }
   });
@@ -148,9 +148,9 @@ describe("embedTexts", () => {
     const { deps: d } = deps([
       Response.json({ data: [{ index: 0, embedding: true }] }),
     ]);
-    await expect(embedTexts(["a"], CONFIG, { deps: d })).rejects.toThrow(
-      /malformed embeddings response/,
-    );
+    const rejection = expect(embedTexts(["a"], CONFIG, { deps: d })).rejects;
+    await rejection.toBeInstanceOf(EmbeddingRequestError);
+    await rejection.toThrow(/malformed embeddings response/);
   });
 });
 
@@ -195,7 +195,7 @@ describe("retry behaviour inherited from the inference policy", () => {
       new Response("unauthorized", { status: 401 }),
     ]);
     await expect(embedTexts(["a"], CONFIG, { deps: d })).rejects.toBeInstanceOf(
-      ModelRequestError,
+      EmbeddingRequestError,
     );
     expect(calls).toHaveLength(1);
   });
@@ -231,21 +231,6 @@ describe("retry-after handling", () => {
       },
     });
     expect(seen).toEqual(["7"]);
-  });
-
-  it("reads the seconds form and tolerates an absent header", () => {
-    expect(extractRetryAfterMs(new Headers({ "retry-after": "2" }))).toBe(
-      2_000,
-    );
-    expect(extractRetryAfterMs(new Headers())).toBeUndefined();
-  });
-
-  it("never returns a negative delay for a date already past", () => {
-    expect(
-      extractRetryAfterMs(
-        new Headers({ "retry-after": "Wed, 21 Oct 2015 07:28:00 GMT" }),
-      ),
-    ).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -319,7 +304,7 @@ describe("transport failure modes", () => {
       }),
     ]);
     await expect(embedTexts(["a"], CONFIG, { deps: d })).rejects.toBeInstanceOf(
-      ModelRequestError,
+      EmbeddingRequestError,
     );
   });
 
@@ -347,7 +332,7 @@ describe("transport failure modes", () => {
         { ...CONFIG, timeoutMs: 5 },
         { deps: d, signal: controller.signal },
       ),
-    ).rejects.toBeInstanceOf(ModelRequestError);
+    ).rejects.toBeInstanceOf(EmbeddingRequestError);
     expect(calls).toHaveLength(1);
   });
 });
