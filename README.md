@@ -53,15 +53,15 @@ console.log(vectors.length, vectors[0]?.length); // 2 768
 
 ### Config
 
-| Field            | Type                   | Description                                                              |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------ |
-| `baseURL`        | `string`               | Server root with its version path, such as `http://host:11434/v1`.       |
-| `model`          | `string`               | Model name.                                                              |
-| `apiKey`         | `string?`              | Sent as a bearer token.                                                  |
-| `dimensions`     | `number?`              | Requested output dimension. Sent only when set; not all models honor it. |
-| `encodingFormat` | `"float" \| "base64"?` | Wire format. Defaults to `float`. Results are always `number[]`.         |
-| `batchSize`      | `number?`              | Texts per request. Defaults to 32.                                       |
-| `timeoutMs`      | `number?`              | Per-request timeout. Defaults to 30000.                                  |
+| Field            | Type                   | Description                                                                                 |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
+| `baseURL`        | `string`               | Server root with its version path, such as `http://host:11434/v1`.                          |
+| `model`          | `string`               | Model name.                                                                                 |
+| `apiKey`         | `string?`              | Sent as a bearer token.                                                                     |
+| `dimensions`     | `number?`              | Requested output dimension. Sent only when set; a reply of any other dimension is rejected. |
+| `encodingFormat` | `"float" \| "base64"?` | Wire format. Defaults to `float`. Results are always `number[]`.                            |
+| `batchSize`      | `number?`              | Texts per request. Defaults to 32.                                                          |
+| `timeoutMs`      | `number?`              | Per-attempt timeout; a timed-out attempt is retried. Defaults to 30000.                     |
 
 ### Options
 
@@ -78,7 +78,7 @@ A failed request throws `EmbeddingRequestError` with a classified `reason` and t
 
 ### Dimensions
 
-Each model has a fixed output dimension: 768 for `nomic-embed-text`, 1536 for OpenAI `text-embedding-3-small`. If you store vectors, call `probeEmbedDims` at startup. Changing models changes the dimension, so treat it as a schema migration.
+Each model has a fixed output dimension: 768 for `nomic-embed-text`, 1536 for OpenAI `text-embedding-3-small`. If you store vectors, call `probeEmbedDims` at startup. Changing models changes the dimension, so treat it as a schema migration. Every vector from one call has the same non-zero dimension, or the call throws `EmbeddingRequestError` with `protocol_mismatch`.
 
 ## Using with Interchange
 

@@ -205,7 +205,20 @@ export async function embedTexts(
       extractRetryAfterMs: extractRetryAfter,
       signal: options.signal,
     });
-    vectors.push(...parseResponse(body, request.url, batch.length));
+    for (const vector of parseResponse(body, request.url, batch.length)) {
+      const width = valid.dimensions ?? vectors[0]?.length ?? vector.length;
+      if (vector.length === 0 || vector.length !== width) {
+        throw new EmbeddingRequestError(
+          classifyProtocolMismatch(
+            vector.length === 0
+              ? "empty embedding"
+              : `expected ${String(width)}-dimensional embeddings, got ${String(vector.length)}`,
+          ),
+          request.url,
+        );
+      }
+      vectors.push(vector);
+    }
   }
   return vectors;
 }

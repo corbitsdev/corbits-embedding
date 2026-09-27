@@ -115,3 +115,26 @@ test("classifies a 200 that is not JSON instead of leaking a SyntaxError", async
     reason: { category: "protocol_mismatch" },
   });
 });
+
+test("rejects empty, uneven, or off-dimension vectors", async () => {
+  for (const [config, bodies] of [
+    [CONFIG, [{ data: [{ index: 0, embedding: [] }] }]],
+    [
+      { ...CONFIG, batchSize: 1 },
+      [
+        { data: [{ index: 0, embedding: [1, 2] }] },
+        { data: [{ index: 0, embedding: [1] }] },
+      ],
+    ],
+    [{ ...CONFIG, dimensions: 3 }, [{ data: [{ index: 0, embedding: [1] }] }]],
+  ] as const) {
+    harness?.dispose();
+    harness = replies(...bodies);
+    const texts = bodies.map((_, i) => String(i));
+    const pending = embedTexts(texts, config, { deps: harness.deps });
+    await harness.run();
+    await expect(pending).rejects.toMatchObject({
+      reason: { category: "protocol_mismatch" },
+    });
+  }
+});
