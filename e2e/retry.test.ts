@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createDefaultScheduler } from "@intx/inference";
 import { setupHarness, type Harness } from "@intx/inference-testing";
 
 import { EmbeddingRequestError, embedTexts } from "../src/index";
@@ -95,17 +96,72 @@ test("honors a caller-supplied extractRetryAfterMs", async () => {
   expect(harness.clock.now()).toBeGreaterThanOrEqual(45_000);
 });
 
-test("applies timeoutMs even when the caller passes a signal", async () => {
-  harness = setupHarness();
-  const stream = harness.scenario.createStream();
-  harness.scenario.whenRequestMatches(() => true, stream);
+/** Hangs until aborted for the first `hangs` calls, then replies. */
+function hangingFetch(hangs: number): {
+  fetch: typeof fetch;
+  calls: () => number;
+} {
+  let calls = 0;
+  const hangThenReply = (async (_url: unknown, init?: RequestInit) => {
+    calls++;
+    if (calls > hangs) {
+      return new Response(
+        JSON.stringify({ data: [{ index: 0, embedding: [1] }] }),
+      );
+    }
+    const signal = init?.signal ?? undefined;
+    return await new Promise<Response>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(signal.reason));
+    });
+  }) as typeof fetch;
+  return { fetch: hangThenReply, calls: () => calls };
+}
 
+test("retries an attempt that hits timeoutMs", async () => {
+  const stub = hangingFetch(1);
+  const vectors = await embedTexts(
+    ["a"],
+    { ...CONFIG, timeoutMs: 50 },
+    { deps: { fetch: stub.fetch, scheduler: createDefaultScheduler() } },
+  );
+
+  expect(vectors).toEqual([[1]]);
+  expect(stub.calls()).toBe(2);
+});
+
+test("applies timeoutMs even when the caller passes a signal", async () => {
+  const stub = hangingFetch(Infinity);
   const pending = embedTexts(
     ["a"],
     { ...CONFIG, timeoutMs: 50 },
-    { deps: harness.deps, signal: new AbortController().signal },
+    {
+      deps: { fetch: stub.fetch, scheduler: createDefaultScheduler() },
+      signal: new AbortController().signal,
+    },
   );
+
+  await expect(pending).rejects.toMatchObject({
+    reason: { category: "timeout" },
+  });
+  expect(stub.calls()).toBe(3);
+});
+
+test("reports a caller abort as aborted, without retrying", async () => {
+  harness = setupHarness({ enableInferenceTimers: true });
+  harness.scenario.whenRequestMatches(
+    () => true,
+    harness.scenario.createStream(),
+  );
+  const controller = new AbortController();
+
+  const pending = embedTexts(["a"], CONFIG, {
+    deps: harness.deps,
+    signal: controller.signal,
+  });
+  setTimeout(() => controller.abort(), 20);
   await harness.run();
 
-  await expect(pending).rejects.toBeInstanceOf(EmbeddingRequestError);
+  await expect(pending).rejects.toMatchObject({
+    reason: { category: "aborted" },
+  });
 });

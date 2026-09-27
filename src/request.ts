@@ -85,15 +85,6 @@ export const extractRetryAfterMs: RetryAfterExtractor = (headers) => {
   return Number.isNaN(at) ? undefined : Math.max(0, at - Date.now());
 };
 
-/** Aborts on the caller's signal or the per-attempt timeout, whichever first. */
-function attemptSignal(
-  timeoutMs: number,
-  signal: AbortSignal | undefined,
-): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
-}
-
 async function attemptOnce(
   request: BuiltRequest,
   deps: RequestDependencies,
@@ -101,6 +92,7 @@ async function attemptOnce(
   extractRetryAfter: RetryAfterExtractor,
   signal: AbortSignal | undefined,
 ): Promise<Attempt> {
+  const timeout = AbortSignal.timeout(timeoutMs);
   let res: Response;
   let raw: string;
   try {
@@ -109,7 +101,8 @@ async function attemptOnce(
       headers: request.headers,
       body: request.body,
       redirect: "manual",
-      signal: attemptSignal(timeoutMs, signal),
+      signal:
+        signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
     });
 
     if (!res.ok) {
@@ -131,9 +124,20 @@ async function attemptOnce(
     // as a bare SyntaxError.
     raw = await res.text();
   } catch (cause) {
-    const aborted =
-      cause instanceof Error &&
-      (cause.name === "AbortError" || cause.name === "TimeoutError");
+    // A caller abort is final; the per-attempt timeout is retryable.
+    if (signal?.aborted === true) {
+      return { ok: false, error: classifyAbortError() };
+    }
+    if (timeout.aborted) {
+      return {
+        ok: false,
+        error: {
+          category: "timeout",
+          message: `embedding request exceeded ${String(timeoutMs)} ms`,
+        },
+      };
+    }
+    const aborted = cause instanceof Error && cause.name === "AbortError";
     return {
       ok: false,
       error: aborted ? classifyAbortError() : classifyNetworkError(cause),
