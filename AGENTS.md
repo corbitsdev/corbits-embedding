@@ -37,3 +37,9 @@ transport. It does not store or search vectors; that is `@corbits/memory`.
 bun install
 bun run check
 ```
+
+## Conventions
+
+- Read `README.md` before changing public behavior.
+- Keep changes focused; update docs and tests alongside code changes.
+- Run `bun run check` before declaring work complete.
